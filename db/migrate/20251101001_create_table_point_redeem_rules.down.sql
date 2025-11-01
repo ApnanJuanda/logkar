@@ -1,0 +1,1 @@
+DROP TABLE point_redeem_rules;
