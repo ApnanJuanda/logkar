@@ -2,9 +2,15 @@ package repository
 
 import (
 	"bsnack/domain/api/product/model"
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"log"
+	"math"
+	"time"
 )
 
 type ProductRepositoryInterface interface {
@@ -15,6 +21,7 @@ type ProductRepositoryInterface interface {
 	GetAllFlavor() (resp []model.Flavor, err error)
 	GetFlavorByID(tx *gorm.DB, id string) (resp model.Size, err error)
 	InsertProductType(data []model.ProductType) (err error)
+	GetAllProductType() (resp []model.ProductType, err error)
 	GetProductTypeByID(tx *gorm.DB, id string) (resp model.ProductType, err error)
 	InsertProduct(tx *gorm.DB, data []model.Product) (err error)
 	GetProductByID(tx *gorm.DB, id string) (resp model.Product, err error)
@@ -25,12 +32,14 @@ type ProductRepositoryInterface interface {
 }
 
 type productRepository struct {
-	DB *gorm.DB
+	DB          *gorm.DB
+	redisClient *redis.Client
 }
 
-func NewProductRepository(DB *gorm.DB) ProductRepositoryInterface {
+func NewProductRepository(DB *gorm.DB, redisClient *redis.Client) ProductRepositoryInterface {
 	return &productRepository{
-		DB: DB,
+		DB:          DB,
+		redisClient: redisClient,
 	}
 }
 
@@ -84,6 +93,11 @@ func (r *productRepository) RollbackTrans(tx *gorm.DB) error {
 
 func (r *productRepository) InsertProductType(data []model.ProductType) (err error) {
 	err = r.DB.Create(&data).Error
+	return
+}
+
+func (r *productRepository) GetAllProductType() (resp []model.ProductType, err error) {
+	err = r.DB.Table("product_types").Find(&resp).Error
 	return
 }
 
@@ -142,49 +156,98 @@ func (r *productRepository) UpdateFieldProductDetail(tx *gorm.DB, id int64, req 
 }
 
 func (r *productRepository) GetListProduct(req model.GetProductRequest) (resp []model.GetProductResponse, count int64, err error) {
-	var (
-		filter string
-		args   []interface{}
-	)
-	if req.StartDate != "" && req.EndDate != "" {
-		dateArgs := []interface{}{
-			req.StartDate,
-			req.EndDate,
-		}
-		args = append(args, dateArgs...)
-		newFilter := `(p.created_at >= ? AND p.created_at <= ?)`
-		if filter != "" {
-			newFilter = ` AND ` + newFilter
-		}
-		filter += newFilter
+	ctx := context.Background()
+	_, err = r.redisClient.Get(ctx, "products_all").Result()
+	if req.Page == 0 && req.Limit == 0 && err == redis.Nil {
+		req.Page = 1
+		req.Limit = math.MaxInt64
 	}
+	if req.Page > 0 && req.Limit > 0 {
+		var (
+			filter string
+			args   []interface{}
+		)
+		if req.StartDate != "" && req.EndDate != "" {
+			dateArgs := []interface{}{
+				req.StartDate,
+				req.EndDate,
+			}
+			args = append(args, dateArgs...)
+			newFilter := `(p.created_at >= ? AND p.created_at <= ?)`
+			if filter != "" {
+				newFilter = ` AND ` + newFilter
+			}
+			filter += newFilter
+		}
 
-	queryList := r.DB.Debug().Table("products as p").
-		Joins("LEFT JOIN product_types as pt ON pt.id = p.type_id").
-		Joins("LEFT JOIN product_details as pd ON pd.product_id = p.id").
-		Joins("LEFT JOIN flavors as f ON f.id = pd.flavor_id").
-		Joins("LEFT JOIN sizes as s ON s.id = pd.size_id").
-		Unscoped().
-		Where(filter, args...)
+		queryList := r.DB.Debug().Table("products as p").
+			Joins("LEFT JOIN product_types as pt ON pt.id = p.type_id").
+			Joins("LEFT JOIN product_details as pd ON pd.product_id = p.id").
+			Joins("LEFT JOIN flavors as f ON f.id = pd.flavor_id").
+			Joins("LEFT JOIN sizes as s ON s.id = pd.size_id").
+			Unscoped().
+			Where(filter, args...)
 
-	if err = queryList.Count(&count).Error; err != nil {
-		return nil, 0, err
-	}
+		if err = queryList.Count(&count).Error; err != nil {
+			return nil, 0, err
+		}
 
-	err = queryList.
-		Select(`p.name as name, 
+		err = queryList.
+			Select(`p.name as name, 
 		pt.name as type,
 		f.name as flavor,
 		pd.stock as quantity,
 		s.name as size,
 		pd.price as price 
 		`).
-		Limit(req.Limit).
-		Offset(req.Offset).
-		Order(`p.created_at DESC`).Find(&resp).Error
+			Limit(req.Limit).
+			Offset(req.Offset).
+			Order(`p.created_at DESC`).Find(&resp).Error
 
-	if err != nil {
-		return nil, 0, err
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if req.Limit == math.MaxInt64 {
+			err = saveGetProductToRedis(r.redisClient, resp)
+			if err != nil {
+				log.Printf("error save data getProduct to redis: %v", err)
+			}
+		}
+	} else {
+		productFromRedis, err := getAllProductFromRedis(r.redisClient)
+		if err != nil {
+			return nil, 0, err
+		}
+		return productFromRedis, int64(len(productFromRedis)), nil
 	}
+
 	return
+}
+
+func saveGetProductToRedis(redisClient *redis.Client, datas []model.GetProductResponse) error {
+	ctx := context.Background()
+
+	jsonData, err := json.Marshal(datas)
+	if err != nil {
+		return err
+	}
+	return redisClient.Set(ctx, "products_all", jsonData, 24*time.Hour).Err()
+}
+
+func getAllProductFromRedis(redisClient *redis.Client) ([]model.GetProductResponse, error) {
+	ctx := context.Background()
+
+	val, err := redisClient.Get(ctx, "products_all").Result()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("data is not found")
+	} else if err != nil {
+		return nil, err
+	}
+
+	var products []model.GetProductResponse
+	if err := json.Unmarshal([]byte(val), &products); err != nil {
+		return nil, err
+	}
+	return products, nil
 }

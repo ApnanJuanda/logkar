@@ -10,6 +10,7 @@ import (
 	"bsnack/lib/form"
 	"bsnack/lib/response"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
@@ -20,9 +21,9 @@ type customerController struct {
 	CustomerService customer.CustomerServiceInterface
 }
 
-func NewCustomerController(db *gorm.DB) *customerController {
+func NewCustomerController(db *gorm.DB, redisClient *redis.Client) *customerController {
 	return &customerController{
-		CustomerService: customer.NewCustomerService(repository.NewCustomerRepository(db), generalRepository.NewGeneralRepository(db)),
+		CustomerService: customer.NewCustomerService(repository.NewCustomerRepository(db, redisClient), generalRepository.NewGeneralRepository(db)),
 	}
 }
 
@@ -76,24 +77,26 @@ func (c *customerController) GetAccount(ctx *gin.Context) {
 	}
 
 	var err error
-	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", "1"))
-	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", "10"))
+	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", ""))
+	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", ""))
 
 	request := model.GetCustomerRequest{}
-	request.Page, err = strconv.Atoi(page)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
+	if page != "" && limit != "" {
+		request.Page, err = strconv.Atoi(page)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		request.Limit, err = strconv.Atoi(limit)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+		request.Offset = (request.Page - 1) * request.Limit
 	}
 
-	request.Limit, err = strconv.Atoi(limit)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
-	request.Offset = (request.Page - 1) * request.Limit
 	request.CustomerID = account.Id
-
 	datas, count, responseCode, err := c.CustomerService.GetListCustomer(request)
 	if err != nil {
 		response.Error(ctx, responseCode, err.Error())
@@ -109,22 +112,24 @@ func (c *customerController) GetAllAccount(ctx *gin.Context) {
 	}
 
 	var err error
-	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", "1"))
-	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", "10"))
+	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", ""))
+	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", ""))
 
 	request := model.GetCustomerRequest{}
-	request.Page, err = strconv.Atoi(page)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
+	if page != "" && limit != "" {
+		request.Page, err = strconv.Atoi(page)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
 
-	request.Limit, err = strconv.Atoi(limit)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
+		request.Limit, err = strconv.Atoi(limit)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+		request.Offset = (request.Page - 1) * request.Limit
 	}
-	request.Offset = (request.Page - 1) * request.Limit
 	request.CustomerID = ""
 
 	datas, count, responseCode, err := c.CustomerService.GetListCustomer(request)

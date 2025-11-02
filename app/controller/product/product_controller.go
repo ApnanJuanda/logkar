@@ -9,6 +9,7 @@ import (
 	"bsnack/lib/form"
 	"bsnack/lib/response"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
@@ -18,9 +19,9 @@ type productController struct {
 	ProductService product.ProductServiceInterface
 }
 
-func NewProductController(db *gorm.DB) *productController {
+func NewProductController(db *gorm.DB, redisClient *redis.Client) *productController {
 	return &productController{
-		ProductService: product.NewProductService(repository.NewProductRepository(db), generalRepository.NewGeneralRepository(db)),
+		ProductService: product.NewProductService(repository.NewProductRepository(db, redisClient), generalRepository.NewGeneralRepository(db)),
 	}
 }
 
@@ -105,6 +106,15 @@ func (c *productController) InsertProductType(ctx *gin.Context) {
 	response.Json(ctx, responseCode, "")
 }
 
+func (c *productController) GetProductType(ctx *gin.Context) {
+	datas, responseCode, err := c.ProductService.GetProductType()
+	if err != nil {
+		response.Error(ctx, responseCode, err.Error())
+		return
+	}
+	response.Json(ctx, responseCode, datas)
+}
+
 func (c *productController) InsertProduct(ctx *gin.Context) {
 	var reqBody model.InsertProductRequest
 
@@ -151,8 +161,8 @@ func (c *productController) InsertProductDetail(ctx *gin.Context) {
 
 func (c *productController) GetListProduct(ctx *gin.Context) {
 	var err error
-	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", "1"))
-	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", "10"))
+	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", ""))
+	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", ""))
 
 	startDate := form.SQLInjector(ctx.DefaultQuery("start_date", ""))
 	endDate := form.SQLInjector(ctx.DefaultQuery("end_date", ""))
@@ -160,18 +170,21 @@ func (c *productController) GetListProduct(ctx *gin.Context) {
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
-	request.Page, err = strconv.Atoi(page)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
 
-	request.Limit, err = strconv.Atoi(limit)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
+	if page != "" && limit != "" {
+		request.Page, err = strconv.Atoi(page)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		request.Limit, err = strconv.Atoi(limit)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+		request.Offset = (request.Page - 1) * request.Limit
 	}
-	request.Offset = (request.Page - 1) * request.Limit
 
 	datas, count, responseCode, err := c.ProductService.GetListProduct(request)
 	if err != nil {

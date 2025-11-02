@@ -120,7 +120,7 @@ func (s *customerService) Login(req model.LoginCustomerRequest) (resp model.Logi
 func (s *customerService) GetListCustomer(req model.GetCustomerRequest) (resp []model.GetCustomerResponse, count int64, responseCode int, err error) {
 	resp, count, err = s.Repository.GetListCustomer(req)
 	if err != nil {
-		log.Printf("ERROR GetListProduct: %v", err)
+		log.Printf("ERROR GetListCustomer: %v", err)
 		responseCode = http.StatusInternalServerError
 		return
 	}

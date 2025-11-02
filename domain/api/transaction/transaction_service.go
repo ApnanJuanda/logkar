@@ -161,7 +161,7 @@ func (s *transactionService) CreateTransaction(req model.TransactionRequest) (re
 func (s *transactionService) GetListTransaction(req model.GetTransactionRequest) (resp []model.GetTransactionResponse, count int64, responseCode int, err error) {
 	resp, count, err = s.Repository.GetListTransaction(req)
 	if err != nil {
-		log.Printf("ERROR GetListProduct: %v", err)
+		log.Printf("ERROR GetListTransaction: %v", err)
 		responseCode = http.StatusInternalServerError
 		return
 	}

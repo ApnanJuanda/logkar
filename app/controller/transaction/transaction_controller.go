@@ -12,6 +12,7 @@ import (
 	"bsnack/lib/form"
 	"bsnack/lib/response"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
@@ -21,11 +22,11 @@ type transactionController struct {
 	TransactionService transaction.TransactionServiceInterface
 }
 
-func NewTransactionController(db *gorm.DB) *transactionController {
+func NewTransactionController(db *gorm.DB, redisClient *redis.Client) *transactionController {
 	return &transactionController{transaction.NewTransactionService(
-		repository.NewTransactionRepository(db),
-		productRepository.NewProductRepository(db),
-		customerRepository.NewCustomerRepository(db),
+		repository.NewTransactionRepository(db, redisClient),
+		productRepository.NewProductRepository(db, redisClient),
+		customerRepository.NewCustomerRepository(db, redisClient),
 		generalRepository.NewGeneralRepository(db),
 		redeemRepository.NewRedeemRepository(db),
 	)}
@@ -60,22 +61,25 @@ func (c *transactionController) GetTransactionAccount(ctx *gin.Context) {
 	}
 
 	var err error
-	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", "1"))
-	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", "10"))
+	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", ""))
+	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", ""))
 
 	request := model.GetTransactionRequest{}
-	request.Page, err = strconv.Atoi(page)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
+	if page != "" && limit != "" {
+		request.Page, err = strconv.Atoi(page)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
 
-	request.Limit, err = strconv.Atoi(limit)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
+		request.Limit, err = strconv.Atoi(limit)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+		request.Offset = (request.Page - 1) * request.Limit
+
 	}
-	request.Offset = (request.Page - 1) * request.Limit
 	request.CustomerID = account.Id
 
 	datas, count, responseCode, err := c.TransactionService.GetListTransaction(request)
@@ -93,22 +97,24 @@ func (c *transactionController) GetAllTransaction(ctx *gin.Context) {
 	}
 
 	var err error
-	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", "1"))
-	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", "10"))
+	page := form.SQLInjectorNumber(ctx.DefaultQuery("page", ""))
+	limit := form.SQLInjectorNumber(ctx.DefaultQuery("limit", ""))
 
 	request := model.GetTransactionRequest{}
-	request.Page, err = strconv.Atoi(page)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
-	}
+	if page != "" && limit != "" {
+		request.Page, err = strconv.Atoi(page)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
 
-	request.Limit, err = strconv.Atoi(limit)
-	if err != nil {
-		response.Error(ctx, http.StatusBadRequest, err.Error())
-		return
+		request.Limit, err = strconv.Atoi(limit)
+		if err != nil {
+			response.Error(ctx, http.StatusBadRequest, err.Error())
+			return
+		}
+		request.Offset = (request.Page - 1) * request.Limit
 	}
-	request.Offset = (request.Page - 1) * request.Limit
 	request.CustomerID = ""
 
 	datas, count, responseCode, err := c.TransactionService.GetListTransaction(request)

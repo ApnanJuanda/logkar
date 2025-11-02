@@ -17,6 +17,7 @@ type ProductServiceInterface interface {
 	InsertFlavor(req model.InsertFlavorRequest) (responseCode int, err error)
 	GetAllFlavor() (resp []model.Flavor, responseCode int, err error)
 	InsertProductType(req model.InsertProductTypeRequest) (responseCode int, err error)
+	GetProductType() (resp []model.ProductType, responseCode int, err error)
 	InsertProduct(req model.InsertProductRequest) (responseCode int, err error)
 	InsertProductDetail(req model.InsertProductDetailRequest) (responseCode int, err error)
 	GetListProduct(req model.GetProductRequest) (resp []model.GetProductResponse, count int64, responseCode int, err error)
@@ -126,10 +127,21 @@ func (s *productService) InsertProductType(req model.InsertProductTypeRequest) (
 	return
 }
 
+func (s *productService) GetProductType() (resp []model.ProductType, responseCode int, err error) {
+	resp, err = s.Repository.GetAllProductType()
+	if err != nil {
+		log.Printf("ERROR GetAllProductType: %v", err)
+		responseCode = http.StatusInternalServerError
+		return
+	}
+	responseCode = http.StatusOK
+	return
+}
+
 func (s *productService) GetAllFlavor() (resp []model.Flavor, responseCode int, err error) {
 	resp, err = s.Repository.GetAllFlavor()
 	if err != nil {
-		log.Printf("ERROR GetAllSize: %v", err)
+		log.Printf("ERROR GetAllFlavor: %v", err)
 		responseCode = http.StatusInternalServerError
 		return
 	}

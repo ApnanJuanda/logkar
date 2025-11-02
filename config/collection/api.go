@@ -20,7 +20,7 @@ func ApiRouter(db *gorm.DB, redisClient *redis.Client, api *gin.RouterGroup) {
 		sellerGroup.POST("/login", sellerCtrl.Login)
 	}
 
-	customerCtrl := customer.NewCustomerController(db)
+	customerCtrl := customer.NewCustomerController(db, redisClient)
 	customerGroup := api.Group("customer")
 	{
 		customerGroup.POST("/register", customerCtrl.Register)
@@ -29,12 +29,13 @@ func ApiRouter(db *gorm.DB, redisClient *redis.Client, api *gin.RouterGroup) {
 		customerGroup.GET("/all", middleware.WithAuh(), customerCtrl.GetAllAccount)
 	}
 
-	productCtrl := product.NewProductController(db)
+	productCtrl := product.NewProductController(db, redisClient)
 	productGroup := api.Group("product")
 	{
 		productGroup.POST("", middleware.WithAuh(), productCtrl.InsertProduct)
 		productGroup.GET("", productCtrl.GetListProduct)
 		productGroup.POST("/type", middleware.WithAuh(), productCtrl.InsertProductType)
+		productGroup.GET("/type", middleware.WithAuh(), productCtrl.GetProductType)
 		productGroup.POST("/detail", middleware.WithAuh(), productCtrl.InsertProductDetail)
 		productGroup.POST("/size", middleware.WithAuh(), productCtrl.InsertSize)
 		productGroup.GET("/size", productCtrl.GetAllSize)
@@ -42,7 +43,7 @@ func ApiRouter(db *gorm.DB, redisClient *redis.Client, api *gin.RouterGroup) {
 		productGroup.GET("/flavor", productCtrl.GetAllFlavor)
 	}
 
-	transactionCtrl := transaction.NewTransactionController(db)
+	transactionCtrl := transaction.NewTransactionController(db, redisClient)
 	transactionGroup := api.Group("/transaction")
 	{
 		transactionGroup.POST("", middleware.WithAuh(), transactionCtrl.CreateTransaction)
@@ -50,7 +51,7 @@ func ApiRouter(db *gorm.DB, redisClient *redis.Client, api *gin.RouterGroup) {
 		transactionGroup.GET("/all", middleware.WithAuh(), transactionCtrl.GetAllTransaction)
 	}
 
-	redeemCtrl := redeem.NewRedeemController(db)
+	redeemCtrl := redeem.NewRedeemController(db, redisClient)
 	redeemGroup := api.Group("/redeem")
 	{
 		redeemGroup.POST("", middleware.WithAuh(), redeemCtrl.RedeemPoint)

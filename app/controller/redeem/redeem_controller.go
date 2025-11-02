@@ -10,6 +10,7 @@ import (
 	"bsnack/domain/api/redeem/repository"
 	"bsnack/lib/response"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"net/http"
 )
@@ -18,13 +19,13 @@ type redeemController struct {
 	RedeemService redeem.RedeemServiceInterface
 }
 
-func NewRedeemController(db *gorm.DB) *redeemController {
+func NewRedeemController(db *gorm.DB, redisClient *redis.Client) *redeemController {
 	return &redeemController{
 		RedeemService: redeem.NewRedeemService(
 			repository.NewRedeemRepository(db),
 			generalRepository.NewGeneralRepository(db),
-			productRepository.NewProductRepository(db),
-			customerRepository.NewCustomerRepository(db),
+			productRepository.NewProductRepository(db, redisClient),
+			customerRepository.NewCustomerRepository(db, redisClient),
 		),
 	}
 }
